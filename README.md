@@ -12,4 +12,4 @@ Henreh
 
 # NOTE
 # I believe this no longer works and i wont continue work on it
-If it does still work then happy days! :D
+If it does still work then perfect! :D
