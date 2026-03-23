@@ -8,7 +8,7 @@ BoomBoxOverhaulV2 adds:
 - YouTube playlist playback
 - Automatic yt-dlp / ffmpeg dependency handling
 - Local boombox volume controls
-- Scrolling track title in the held-item HUD
+- Scrolling track title in the held-item HUD (This may change in a future version as I am not happy with it)
 - In-game boombox URL input UI
 - Infinite battery option
 - Keep-playing-while-pocketed behavior
