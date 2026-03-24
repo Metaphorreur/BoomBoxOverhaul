@@ -27,6 +27,9 @@ namespace BoomBoxOverhaul
         private bool isPlayingCustom = false;
 
         private readonly HashSet<ulong> readyClients = new HashSet<ulong>();
+        private readonly HashSet<ulong> expectedClients = new HashSet<ulong>();
+        private readonly HashSet<ulong> failedClients = new HashSet<ulong>();
+
         private Coroutine localLoadRoutine;
         private Coroutine serverWaitRoutine;
         private bool suppressVanillaStopOnce = false;
@@ -40,11 +43,24 @@ namespace BoomBoxOverhaul
             Plugin.Log("UnifiedBoomboxController attached to boombox.");
 
             Boombox = GetComponent<BoomboxItem>();
-            Audio = GetComponent<AudioSource>();
+
+            AudioSource[] sources = GetComponents<AudioSource>();
+            Audio = null;
+
+            int i;
+            for (i = 0; i < sources.Length; i++)
+            {
+                if (sources[i] != null && sources[i] != Boombox.boomboxAudio && sources[i].name == "BoomBoxOverhaulAudio")
+                {
+                    Audio = sources[i];
+                    break;
+                }
+            }
 
             if (Audio == null)
             {
                 Audio = gameObject.AddComponent<AudioSource>();
+                Audio.name = "BoomBoxOverhaulAudio";
             }
 
             Audio.playOnAwake = false;
@@ -72,7 +88,7 @@ namespace BoomBoxOverhaul
                 didScroll = true;
             }
 
-            if (uiOpen)
+            if (uiOpen && !isPlayingCustom)
             {
                 StopVanillaBoomboxAudio();
             }
@@ -208,7 +224,7 @@ namespace BoomBoxOverhaul
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
 
-            GUI.Box(new Rect(20, 20, 520, 180), "BoomBoxOverhaulV2 By Henreh:D);
+            GUI.Box(new Rect(20, 20, 520, 180), "BoomBoxOverhaulV2 By Henreh :D");
             GUI.Label(new Rect(35, 50, 460, 20), "Paste YouTube video or playlist URL:");
             pendingUrl = GUI.TextField(new Rect(35, 72, 470, 22), pendingUrl, 1000);
             GUI.Label(new Rect(35, 97, 470, 20), "State: " + statusText);
@@ -223,8 +239,6 @@ namespace BoomBoxOverhaul
                 if (!string.IsNullOrEmpty(pendingUrl) && Boombox != null && Boombox.NetworkObject != null)
                 {
                     BoomBoxOverhaulNet.SendRequestPlay(Boombox.NetworkObject.NetworkObjectId, pendingUrl.Trim());
-                    uiOpen = false;
-                    SetCameraLocked(false);
                 }
             }
 
@@ -236,8 +250,6 @@ namespace BoomBoxOverhaul
                 {
                     BoomBoxOverhaulNet.SendRequestStop(Boombox.NetworkObject.NetworkObjectId);
                 }
-                uiOpen = false;
-                SetCameraLocked(false);
             }
         }
 
@@ -282,7 +294,7 @@ namespace BoomBoxOverhaul
                     return;
                 }
 
-                if (Boombox.boomboxAudio != null)
+                if (Boombox.boomboxAudio != null && Boombox.boomboxAudio != Audio)
                 {
                     Boombox.boomboxAudio.Stop();
                 }
@@ -462,17 +474,40 @@ namespace BoomBoxOverhaul
             }
         }
 
-        public void ServerHandlePlay(string url)
+        private void PopulateExpectedClients()
+        {
+            expectedClients.Clear();
+
+            if (NetworkManager.Singleton == null || NetworkManager.Singleton.ConnectedClients == null)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<ulong, NetworkClient> kvp in NetworkManager.Singleton.ConnectedClients)
+            {
+                expectedClients.Add(kvp.Key);
+            }
+
+            Plugin.Log("Expected clients for boombox playback: " + expectedClients.Count);
+        }
+
+        public void ServerHandlePlay(ulong requesterClientId, string url)
         {
             if (!DependencyBootstrapper.GetState().IsReady())
             {
-                ClientRejectPlay("Dependencies not ready");
+                if (Boombox != null && Boombox.NetworkObject != null)
+                {
+                    BoomBoxOverhaulNet.SendRejectPlay(requesterClientId, Boombox.NetworkObject.NetworkObjectId, "Dependencies not ready");
+                }
                 return;
             }
 
             if (!UrlHelpers.IsLikelyYoutubeUrl(url))
             {
-                ClientRejectPlay("Invalid URL");
+                if (Boombox != null && Boombox.NetworkObject != null)
+                {
+                    BoomBoxOverhaulNet.SendRejectPlay(requesterClientId, Boombox.NetworkObject.NetworkObjectId, "Invalid URL");
+                }
                 return;
             }
 
@@ -481,6 +516,8 @@ namespace BoomBoxOverhaul
             isPlayingCustom = false;
             statusText = "Resolving...";
             readyClients.Clear();
+            expectedClients.Clear();
+            failedClients.Clear();
             playlist = new PlaylistState();
             tooltipScrollIndex = 0;
             tooltipScrollTimer = 0f;
@@ -492,7 +529,10 @@ namespace BoomBoxOverhaul
                 List<string> ids;
                 if (!YtDlpBridge.ResolvePlaylistIds(url, out ids) || ids.Count == 0)
                 {
-                    ClientRejectPlay("Playlist resolve failed");
+                    if (Boombox != null && Boombox.NetworkObject != null)
+                    {
+                        BoomBoxOverhaulNet.SendRejectPlay(requesterClientId, Boombox.NetworkObject.NetworkObjectId, "Playlist resolve failed");
+                    }
                     isPreparing = false;
                     return;
                 }
@@ -506,7 +546,10 @@ namespace BoomBoxOverhaul
                 string videoId = UrlHelpers.TryExtractVideoId(url);
                 if (string.IsNullOrEmpty(videoId))
                 {
-                    ClientRejectPlay("Could not parse video id");
+                    if (Boombox != null && Boombox.NetworkObject != null)
+                    {
+                        BoomBoxOverhaulNet.SendRejectPlay(requesterClientId, Boombox.NetworkObject.NetworkObjectId, "Could not parse video id");
+                    }
                     isPreparing = false;
                     return;
                 }
@@ -518,10 +561,11 @@ namespace BoomBoxOverhaul
 
             if (Boombox == null || Boombox.NetworkObject == null)
             {
-                ClientRejectPlay("Boombox missing network object");
                 isPreparing = false;
                 return;
             }
+
+            PopulateExpectedClients();
 
             string currentSourceUrl = "https://www.youtube.com/watch?v=" + currentVideoId;
             BoomBoxOverhaulNet.BroadcastPrepareTrack(Boombox.NetworkObject.NetworkObjectId, currentSourceUrl, currentVideoId, playlist.Index, playlist.VideoIds.ToArray());
@@ -534,7 +578,7 @@ namespace BoomBoxOverhaul
             serverWaitRoutine = StartCoroutine(ServerWaitForReadyThenPlay());
         }
 
-        private void ClientRejectPlay(string reason)
+        public void ClientRejectPlay(string reason)
         {
             statusText = reason;
             isPreparing = false;
@@ -567,6 +611,8 @@ namespace BoomBoxOverhaul
             bool fetchOk = false;
             TrackInfo info = new TrackInfo();
 
+            Plugin.Log("Preparing local track download for: " + videoId);
+
             yield return RunBlockingTask(delegate
             {
                 fetchOk = YtDlpBridge.FetchTrack(canonicalUrl, videoId, out info);
@@ -574,13 +620,17 @@ namespace BoomBoxOverhaul
 
             if (!fetchOk || !File.Exists(info.cachePath))
             {
-                statusText = "Download failed";
+                statusText = "Download failed please try a new link, sorry!";
+                Plugin.Warn("Download failed for: " + videoId);
+
                 if (Boombox != null && Boombox.NetworkObject != null)
                 {
                     BoomBoxOverhaulNet.SendNotifyReady(Boombox.NetworkObject.NetworkObjectId, false);
                 }
                 yield break;
             }
+
+            Plugin.Log("Local track download complete for: " + videoId);
 
             statusText = "Loading clip...";
             string fileUrl = "file:///" + info.cachePath.Replace("\\", "/");
@@ -592,6 +642,8 @@ namespace BoomBoxOverhaul
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     statusText = "Clip load failed";
+                    Plugin.Warn("Clip load failed for: " + videoId);
+
                     if (Boombox != null && Boombox.NetworkObject != null)
                     {
                         BoomBoxOverhaulNet.SendNotifyReady(Boombox.NetworkObject.NetworkObjectId, false);
@@ -618,6 +670,7 @@ namespace BoomBoxOverhaul
                 tooltipScrollTimer = 0f;
                 ApplyLocalVolume();
                 statusText = "Ready: " + clip.name;
+                Plugin.Log("Local clip ready for: " + videoId);
 
                 if (Boombox != null && Boombox.NetworkObject != null)
                 {
@@ -631,6 +684,14 @@ namespace BoomBoxOverhaul
             if (success)
             {
                 readyClients.Add(clientId);
+                failedClients.Remove(clientId);
+                Plugin.Log("Client ready for boombox playback: " + clientId);
+            }
+            else
+            {
+                failedClients.Add(clientId);
+                readyClients.Remove(clientId);
+                Plugin.Warn("Client failed to prepare boombox playback: " + clientId);
             }
         }
 
@@ -639,8 +700,16 @@ namespace BoomBoxOverhaul
             float timeout = Mathf.Max(1f, Plugin.ReadyTimeoutSeconds.Value);
             float start = Time.time;
 
+            Plugin.Log("Waiting for clients to prepare track. Expected: " + expectedClients.Count);
+
             while (Time.time - start < timeout)
             {
+                if (expectedClients.Count > 0 && readyClients.Count >= expectedClients.Count)
+                {
+                    Plugin.Log("All expected clients are ready. Starting playback immediately.");
+                    break;
+                }
+
                 yield return null;
             }
 
@@ -648,17 +717,27 @@ namespace BoomBoxOverhaul
             {
                 ClientRejectPlay("No client prepared track");
                 isPreparing = false;
+                Plugin.Warn("No clients were ready before timeout.");
                 yield break;
+            }
+
+            if (readyClients.Count < expectedClients.Count)
+            {
+                Plugin.Warn("Timeout reached. Starting playback for ready clients only. Ready: " + readyClients.Count + " / Expected: " + expectedClients.Count);
+            }
+            else
+            {
+                Plugin.Log("Starting playback for all expected clients.");
             }
 
             if (Boombox != null && Boombox.NetworkObject != null)
             {
-                BoomBoxOverhaulNet.BroadcastBeginPlayback(Boombox.NetworkObject.NetworkObjectId, currentVideoId);
+                BoomBoxOverhaulNet.BroadcastBeginPlaybackReadyOnly(Boombox.NetworkObject.NetworkObjectId, currentVideoId, readyClients);
             }
 
             isPreparing = false;
             isPlayingCustom = true;
-            statusText = "Playing";
+            statusText = "Playing (" + readyClients.Count + "/" + expectedClients.Count + " ready)";
         }
 
         public void ClientBeginPlayback(string videoId)
@@ -733,6 +812,8 @@ namespace BoomBoxOverhaul
             currentVideoId = next;
             statusText = "Next track...";
             readyClients.Clear();
+            expectedClients.Clear();
+            failedClients.Clear();
             tooltipScrollIndex = 0;
             tooltipScrollTimer = 0f;
 
@@ -742,6 +823,7 @@ namespace BoomBoxOverhaul
             }
 
             StopVanillaBoomboxAudio();
+            PopulateExpectedClients();
 
             string currentSourceUrl = "https://www.youtube.com/watch?v=" + currentVideoId;
             BoomBoxOverhaulNet.BroadcastPrepareTrack(Boombox.NetworkObject.NetworkObjectId, currentSourceUrl, currentVideoId, playlist.Index, playlist.VideoIds.ToArray());
