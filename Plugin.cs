@@ -51,7 +51,7 @@ namespace BoomBoxOverhaul
             VolumeUpKey = Config.Bind("Input", "VolumeUpKey", KeyCode.Equals, "Increase boombox volume.");
             VolumeDownKey = Config.Bind("Input", "VolumeDownKey", KeyCode.Minus, "Decrease boombox volume.");
             MaxCacheFiles = Config.Bind("Cache", "MaxCacheFiles", 15, "Maximum amount of downloaded tracks to keep.");
-            ReadyTimeoutSeconds = Config.Bind("Networking", "ReadyTimeoutSeconds", 12f, "How long the server waits for clients to prepare before starting anyway.");
+            ReadyTimeoutSeconds = Config.Bind("Networking", "ReadyTimeoutSeconds", 20f, "How long the server waits for clients to prepare before starting anyway.");
             AutoplayPlaylist = Config.Bind("Playlist", "AutoplayPlaylist", true, "Automatically continue to next playlist track.");
             ShufflePlaylist = Config.Bind("Playlist", "ShufflePlaylist", false, "Shuffle playlist order after resolving entries.");
             MaxTrackSeconds = Config.Bind("Downloads", "MaxTrackSeconds", 1800, "Maximum allowed track duration in seconds.");
@@ -80,9 +80,14 @@ namespace BoomBoxOverhaul
             Logger.LogInfo(ModName + " " + ModVersion + " loaded.");
 
             DependencyBootstrapper.EnsureStarted(this);
-            Logger.LogInfo("Dependency bootstrap requested from Plugin.Awake().");
+            Logger.LogInfo("Dependency bootstrap started.");
 
-            BoomBoxOverhaulNet.Initialize(this);
+            GameObject netBoot = new GameObject("BoomBoxOverhaulNetBoot");
+            netBoot.hideFlags = HideFlags.HideAndDontSave;
+            netBoot.AddComponent<BoomBoxOverhaulNetBoot>();
+            DontDestroyOnLoad(netBoot);
+
+            Logger.LogInfo("BoomBoxOverhaul network boot started.");
         }
 
         internal static void Log(string msg)
