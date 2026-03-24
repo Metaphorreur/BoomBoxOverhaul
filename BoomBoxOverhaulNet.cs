@@ -1,4 +1,4 @@
-using System;
+uusing System;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Collections;
@@ -15,36 +15,64 @@ namespace BoomBoxOverhaul
         private const string MsgBeginPlayback = "BoomBoxOverhaul_BeginPlayback";
         private const string MsgRequestStop = "BoomBoxOverhaul_RequestStop";
         private const string MsgStopPlayback = "BoomBoxOverhaul_StopPlayback";
+        private const string MsgRejectPlay = "BoomBoxOverhaul_RejectPlay";
 
-        private static MonoBehaviour coroutineHost;
+        private static MonoBehaviour host;
         private static bool initialized;
+        private static bool handlersRegistered;
+        private static NetworkManager boundManager;
 
-        public static void Initialize(MonoBehaviour host)
+        public static void Initialize(MonoBehaviour coroutineHost)
         {
             if (initialized)
             {
                 return;
             }
 
-            coroutineHost = host;
             initialized = true;
-            host.StartCoroutine(RegisterWhenReady());
+            host = coroutineHost;
+            host.StartCoroutine(BootLoop());
         }
 
-        private static IEnumerator RegisterWhenReady()
+        private static IEnumerator BootLoop()
         {
-            while (NetworkManager.Singleton == null)
+            while (true)
             {
-                yield return null;
+                TryBindToNetworkManager();
+                yield return new WaitForSeconds(1f);
+            }
+        }
+
+        private static void TryBindToNetworkManager()
+        {
+            NetworkManager nm = NetworkManager.Singleton;
+            if (nm == null)
+            {
+                return;
             }
 
-            RegisterHandlers();
-            Plugin.Log("BoomBoxOverhaul network applied (I promise this time) -Henreh.");
+            if (boundManager != nm)
+            {
+                UnregisterHandlers();
+                boundManager = nm;
+                handlersRegistered = false;
+                Plugin.Log("BoomBoxOverhaul bound to NetworkManager.");
+            }
+
+            if (!handlersRegistered)
+            {
+                RegisterHandlers();
+            }
         }
 
         private static void RegisterHandlers()
         {
-            CustomMessagingManager mm = NetworkManager.Singleton.CustomMessagingManager;
+            if (boundManager == null || boundManager.CustomMessagingManager == null)
+            {
+                return;
+            }
+
+            CustomMessagingManager mm = boundManager.CustomMessagingManager;
 
             mm.RegisterNamedMessageHandler(MsgRequestPlay, OnRequestPlay);
             mm.RegisterNamedMessageHandler(MsgPrepareTrack, OnPrepareTrack);
@@ -52,17 +80,42 @@ namespace BoomBoxOverhaul
             mm.RegisterNamedMessageHandler(MsgBeginPlayback, OnBeginPlayback);
             mm.RegisterNamedMessageHandler(MsgRequestStop, OnRequestStop);
             mm.RegisterNamedMessageHandler(MsgStopPlayback, OnStopPlayback);
+            mm.RegisterNamedMessageHandler(MsgRejectPlay, OnRejectPlay);
+
+            handlersRegistered = true;
+            Plugin.Log("BoomBoxOverhaul network handlers registered.");
+        }
+
+        private static void UnregisterHandlers()
+        {
+            if (boundManager == null || boundManager.CustomMessagingManager == null || !handlersRegistered)
+            {
+                return;
+            }
+
+            CustomMessagingManager mm = boundManager.CustomMessagingManager;
+
+            mm.UnregisterNamedMessageHandler(MsgRequestPlay);
+            mm.UnregisterNamedMessageHandler(MsgPrepareTrack);
+            mm.UnregisterNamedMessageHandler(MsgNotifyReady);
+            mm.UnregisterNamedMessageHandler(MsgBeginPlayback);
+            mm.UnregisterNamedMessageHandler(MsgRequestStop);
+            mm.UnregisterNamedMessageHandler(MsgStopPlayback);
+            mm.UnregisterNamedMessageHandler(MsgRejectPlay);
+
+            handlersRegistered = false;
+            Plugin.Log("BoomBoxOverhaul network handlers unregistered.");
         }
 
         public static UnifiedBoomboxController GetController(ulong networkObjectId)
         {
-            if (NetworkManager.Singleton == null)
+            if (boundManager == null || boundManager.SpawnManager == null)
             {
                 return null;
             }
 
             NetworkObject netObj;
-            if (!NetworkManager.Singleton.SpawnManager.SpawnedObjects.TryGetValue(networkObjectId, out netObj))
+            if (!boundManager.SpawnManager.SpawnedObjects.TryGetValue(networkObjectId, out netObj))
             {
                 return null;
             }
@@ -72,23 +125,27 @@ namespace BoomBoxOverhaul
 
         public static void SendRequestPlay(ulong networkObjectId, string url)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsClient)
             {
+                Plugin.Warn("SendRequestPlay failed: network not ready.");
                 return;
             }
 
-            FastBufferWriter writer = new FastBufferWriter(4096, Allocator.Temp);
-            writer.WriteValueSafe(networkObjectId);
-            writer.WriteValueSafe(url);
+            using (FastBufferWriter writer = new FastBufferWriter(8192, Allocator.Temp))
+            {
+                writer.WriteValueSafe(networkObjectId);
+                writer.WriteValueSafe(url);
+                boundManager.CustomMessagingManager.SendNamedMessage(MsgRequestPlay, NetworkManager.ServerClientId, writer);
+            }
 
-            NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgRequestPlay, NetworkManager.ServerClientId, writer);
-            writer.Dispose();
+            Plugin.Log("Sent play request for object " + networkObjectId);
         }
 
         public static void BroadcastPrepareTrack(ulong networkObjectId, string canonicalUrl, string videoId, int playlistIndex, string[] playlistIds)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsServer)
             {
+                Plugin.Warn("BroadcastPrepareTrack failed: server network not ready.");
                 return;
             }
 
@@ -96,77 +153,88 @@ namespace BoomBoxOverhaul
             int i;
             for (i = 0; i < clientIds.Length; i++)
             {
-                FastBufferWriter writer = new FastBufferWriter(8192, Allocator.Temp);
-                writer.WriteValueSafe(networkObjectId);
-                writer.WriteValueSafe(canonicalUrl);
-                writer.WriteValueSafe(videoId);
-                writer.WriteValueSafe(playlistIndex);
-                writer.WriteValueSafe(playlistIds.Length);
-
-                int j;
-                for (j = 0; j < playlistIds.Length; j++)
+                using (FastBufferWriter writer = new FastBufferWriter(16384, Allocator.Temp))
                 {
-                    writer.WriteValueSafe(playlistIds[j]);
-                }
+                    writer.WriteValueSafe(networkObjectId);
+                    writer.WriteValueSafe(canonicalUrl);
+                    writer.WriteValueSafe(videoId);
+                    writer.WriteValueSafe(playlistIndex);
+                    writer.WriteValueSafe(playlistIds.Length);
 
-                NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgPrepareTrack, clientIds[i], writer);
-                writer.Dispose();
+                    int j;
+                    for (j = 0; j < playlistIds.Length; j++)
+                    {
+                        writer.WriteValueSafe(playlistIds[j]);
+                    }
+
+                    boundManager.CustomMessagingManager.SendNamedMessage(MsgPrepareTrack, clientIds[i], writer);
+                }
             }
+
+            Plugin.Log("Broadcast prepare track for object " + networkObjectId);
         }
 
         public static void SendNotifyReady(ulong networkObjectId, bool success)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsClient)
             {
+                Plugin.Warn("SendNotifyReady failed: network not ready.");
                 return;
             }
 
-            FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp);
-            writer.WriteValueSafe(networkObjectId);
-            writer.WriteValueSafe(success);
+            using (FastBufferWriter writer = new FastBufferWriter(256, Allocator.Temp))
+            {
+                writer.WriteValueSafe(networkObjectId);
+                writer.WriteValueSafe(success);
+                boundManager.CustomMessagingManager.SendNamedMessage(MsgNotifyReady, NetworkManager.ServerClientId, writer);
+            }
 
-            NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgNotifyReady, NetworkManager.ServerClientId, writer);
-            writer.Dispose();
+            Plugin.Log("Sent ready state " + success + " for object " + networkObjectId);
         }
 
-        public static void BroadcastBeginPlayback(ulong networkObjectId, string videoId)
+        public static void BroadcastBeginPlaybackReadyOnly(ulong networkObjectId, string videoId, HashSet<ulong> readyClientIds)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsServer)
             {
+                Plugin.Warn("BroadcastBeginPlaybackReadyOnly failed: server network not ready.");
                 return;
             }
 
-            ulong[] clientIds = GetConnectedClientIds();
-            int i;
-            for (i = 0; i < clientIds.Length; i++)
+            foreach (ulong clientId in readyClientIds)
             {
-                FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp);
-                writer.WriteValueSafe(networkObjectId);
-                writer.WriteValueSafe(videoId);
-
-                NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgBeginPlayback, clientIds[i], writer);
-                writer.Dispose();
+                using (FastBufferWriter writer = new FastBufferWriter(2048, Allocator.Temp))
+                {
+                    writer.WriteValueSafe(networkObjectId);
+                    writer.WriteValueSafe(videoId);
+                    boundManager.CustomMessagingManager.SendNamedMessage(MsgBeginPlayback, clientId, writer);
+                }
             }
+
+            Plugin.Log("Broadcast begin playback to ready clients only: " + readyClientIds.Count);
         }
 
         public static void SendRequestStop(ulong networkObjectId)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsClient)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsClient)
             {
+                Plugin.Warn("SendRequestStop failed: network not ready.");
                 return;
             }
 
-            FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp);
-            writer.WriteValueSafe(networkObjectId);
+            using (FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp))
+            {
+                writer.WriteValueSafe(networkObjectId);
+                boundManager.CustomMessagingManager.SendNamedMessage(MsgRequestStop, NetworkManager.ServerClientId, writer);
+            }
 
-            NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgRequestStop, NetworkManager.ServerClientId, writer);
-            writer.Dispose();
+            Plugin.Log("Sent stop request for object " + networkObjectId);
         }
 
         public static void BroadcastStopPlayback(ulong networkObjectId)
         {
-            if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsServer)
+            if (boundManager == null || !handlersRegistered || !boundManager.IsServer)
             {
+                Plugin.Warn("BroadcastStopPlayback failed: server network not ready.");
                 return;
             }
 
@@ -174,11 +242,28 @@ namespace BoomBoxOverhaul
             int i;
             for (i = 0; i < clientIds.Length; i++)
             {
-                FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp);
-                writer.WriteValueSafe(networkObjectId);
+                using (FastBufferWriter writer = new FastBufferWriter(128, Allocator.Temp))
+                {
+                    writer.WriteValueSafe(networkObjectId);
+                    boundManager.CustomMessagingManager.SendNamedMessage(MsgStopPlayback, clientIds[i], writer);
+                }
+            }
 
-                NetworkManager.Singleton.CustomMessagingManager.SendNamedMessage(MsgStopPlayback, clientIds[i], writer);
-                writer.Dispose();
+            Plugin.Log("Broadcast stop playback for object " + networkObjectId);
+        }
+
+        public static void SendRejectPlay(ulong targetClientId, ulong networkObjectId, string reason)
+        {
+            if (boundManager == null || !handlersRegistered || !boundManager.IsServer)
+            {
+                return;
+            }
+
+            using (FastBufferWriter writer = new FastBufferWriter(2048, Allocator.Temp))
+            {
+                writer.WriteValueSafe(networkObjectId);
+                writer.WriteValueSafe(reason);
+                boundManager.CustomMessagingManager.SendNamedMessage(MsgRejectPlay, targetClientId, writer);
             }
         }
 
@@ -193,7 +278,11 @@ namespace BoomBoxOverhaul
             UnifiedBoomboxController controller = GetController(networkObjectId);
             if (controller != null)
             {
-                controller.ServerHandlePlay(url);
+                controller.ServerHandlePlay(senderClientId, url);
+            }
+            else
+            {
+                Plugin.Warn("OnRequestPlay could not find controller for object " + networkObjectId);
             }
         }
 
@@ -223,6 +312,10 @@ namespace BoomBoxOverhaul
             {
                 controller.ClientPrepareTrack(canonicalUrl, videoId, playlistIndex, playlistIds);
             }
+            else
+            {
+                Plugin.Warn("OnPrepareTrack could not find controller for object " + networkObjectId);
+            }
         }
 
         private static void OnNotifyReady(ulong senderClientId, FastBufferReader reader)
@@ -237,6 +330,10 @@ namespace BoomBoxOverhaul
             if (controller != null)
             {
                 controller.ServerNotifyReady(senderClientId, success);
+            }
+            else
+            {
+                Plugin.Warn("OnNotifyReady could not find controller for object " + networkObjectId);
             }
         }
 
@@ -253,6 +350,10 @@ namespace BoomBoxOverhaul
             {
                 controller.ClientBeginPlayback(videoId);
             }
+            else
+            {
+                Plugin.Warn("OnBeginPlayback could not find controller for object " + networkObjectId);
+            }
         }
 
         private static void OnRequestStop(ulong senderClientId, FastBufferReader reader)
@@ -264,6 +365,10 @@ namespace BoomBoxOverhaul
             if (controller != null)
             {
                 controller.ServerHandleStop();
+            }
+            else
+            {
+                Plugin.Warn("OnRequestStop could not find controller for object " + networkObjectId);
             }
         }
 
@@ -277,15 +382,41 @@ namespace BoomBoxOverhaul
             {
                 controller.ClientStopPlayback();
             }
+            else
+            {
+                Plugin.Warn("OnStopPlayback could not find controller for object " + networkObjectId);
+            }
+        }
+
+        private static void OnRejectPlay(ulong senderClientId, FastBufferReader reader)
+        {
+            ulong networkObjectId;
+            string reason;
+
+            reader.ReadValueSafe(out networkObjectId);
+            reader.ReadValueSafe(out reason);
+
+            UnifiedBoomboxController controller = GetController(networkObjectId);
+            if (controller != null)
+            {
+                controller.ClientRejectPlay(reason);
+            }
         }
 
         private static ulong[] GetConnectedClientIds()
         {
             List<ulong> ids = new List<ulong>();
-            foreach (KeyValuePair<ulong, NetworkClient> kvp in NetworkManager.Singleton.ConnectedClients)
+
+            if (boundManager == null || boundManager.ConnectedClients == null)
+            {
+                return ids.ToArray();
+            }
+
+            foreach (KeyValuePair<ulong, NetworkClient> kvp in boundManager.ConnectedClients)
             {
                 ids.Add(kvp.Key);
             }
+
             return ids.ToArray();
         }
     }
