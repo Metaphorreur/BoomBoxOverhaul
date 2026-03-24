@@ -1,4 +1,4 @@
-﻿using BepInEx;
+using BepInEx;
 using BepInEx.Configuration;
 using HarmonyLib;
 using System.IO;
@@ -10,8 +10,8 @@ namespace BoomBoxOverhaul
     public class Plugin : BaseUnityPlugin
     {
         public const string ModGuid = "henreh.boomboxoverhaul";
-        public const string ModName = "BoomBoxOverhaul";
-        public const string ModVersion = "2.0.0";
+        public const string ModName = "BoomBoxOverhaulV2";
+        public const string ModVersion = "2.0.1";
 
         internal static Plugin Instance;
         internal static Harmony Harmony;
@@ -81,6 +81,8 @@ namespace BoomBoxOverhaul
 
             DependencyBootstrapper.EnsureStarted(this);
             Logger.LogInfo("Dependency bootstrap requested from Plugin.Awake().");
+
+            BoomBoxOverhaulNet.Initialize(this);
         }
 
         internal static void Log(string msg)
