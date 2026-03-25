@@ -42,6 +42,7 @@ Config file (`henreh.boomboxoverhaul.cfg`) is generated through BepInEx and cont
 ## Credits
 
 - Henreh. (Developer)
+- Mr Dad (Teacher)
 - bananas (Very good tester!)
 - Wozzie (Testing)
 - Metaphorreur (Testing)
