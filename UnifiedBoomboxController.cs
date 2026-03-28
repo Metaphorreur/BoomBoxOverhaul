@@ -1,3 +1,4 @@
+using BoomBoxOverhaul;
 using GameNetcodeStuff;
 using System;
 using System.Collections;
@@ -117,32 +118,51 @@ namespace BoomBoxOverhaul
 
         private void HandleInput()
         {
-            if (IsConfiguredKeyPressed(Plugin.OpenUiKey.Value) && IsHeldByLocalPlayer())
-            {
-                uiOpen = !uiOpen;
-
-                if (uiOpen)
-                {
-                    StopAllBoomboxAudioForUi();
-                }
-
-                SetCameraLocked(uiOpen);
-                Plugin.Log("Toggled boombox UI. Now open = " + uiOpen);
-            }
-
             if (IsConfiguredKeyPressed(Plugin.VolumeUpKey.Value) && IsRelevantToLocalPlayer())
             {
-                localVolume = Mathf.Clamp(localVolume + Plugin.VolumeStep.Value, 0f, 2f);
-                ApplyLocalVolume();
+                float nextVolume = Mathf.Clamp(localVolume + Plugin.VolumeStep.Value, 0f, 2f);
+
+                if (Boombox != null && Boombox.NetworkObject != null)
+                {
+                    BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, nextVolume);
+                }
+                else
+                {
+                    localVolume = nextVolume;
+                    ApplyLocalVolume();
+                }
             }
 
             if (IsConfiguredKeyPressed(Plugin.VolumeDownKey.Value) && IsRelevantToLocalPlayer())
             {
-                localVolume = Mathf.Clamp(localVolume - Plugin.VolumeStep.Value, 0f, 2f);
-                ApplyLocalVolume();
+                float nextVolume = Mathf.Clamp(localVolume - Plugin.VolumeStep.Value, 0f, 2f);
+
+                if (Boombox != null && Boombox.NetworkObject != null)
+                {
+                    BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, nextVolume);
+                }
+                else
+                {
+                    localVolume = nextVolume;
+                    ApplyLocalVolume();
+                }
+            }
+        }
+        public void ServerHandleSetVolume(float volume)
+        {
+            float clamped = Mathf.Clamp(volume, 0f, 2f);
+
+            if (Boombox != null && Boombox.NetworkObject != null)
+            {
+                BoomBoxOverhaulNet.BroadcastApplyVolume(Boombox.NetworkObject.NetworkObjectId, clamped);
             }
         }
 
+        public void ClientApplyNetworkVolume(float volume)
+        {
+            localVolume = Mathf.Clamp(volume, 0f, 2f);
+            ApplyLocalVolume();
+        }
         private bool IsConfiguredKeyPressed(KeyCode keyCode)
         {
             Keyboard keyboard = Keyboard.current;
