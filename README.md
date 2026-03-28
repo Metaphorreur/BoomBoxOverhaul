@@ -8,7 +8,7 @@ BoomBoxOverhaulV2 adds:
 - YouTube playlist playback
 - Automatic yt-dlp / ffmpeg dependency handling
 - Local boombox volume controls
-- Scrolling track title in the held-item HUD (This may change in a future version as I am not happy with it)
+- Scrolling track title in the held-item HUD (This may change in a future version as I am not entirely happy with it)
 - In-game boombox URL input UI
 - Infinite battery option
 - Keep-playing-while-pocketed behavior
@@ -42,21 +42,19 @@ Config file (`henreh.boomboxoverhaul.cfg`) is generated through BepInEx and cont
 ## Credits
 
 - Henreh. (Developer)
-- Mr Dad (Teacher)
-- bananas (Very good tester!)
-- Wozzie (Testing)
+- Bananas (Very good tester!)
 - Metaphorreur (Testing)
-- Coheesion (Good guinea pig!)
+- Wozzie (Testing)
+- Coheesion (Very good guinea pig!)
+- Langerz (Strange tester!)
+- Jvggr (Testing)
 
-## Manual Install
+## Planned content
 
-- For manual install Place the manual install folder inside of `BepInEx/plugins` Folder!
+- I am looking to add back the volume change ability when looking at a place boombox, I recently found my source for V1 so expect this soon
+- I am looking to improve performance with this mod soon
+- I am looking to make the mod compatiable with Spotify and potentially soundcloud links
 
-## Thunderstore Link
+## Issues
 
-- https://thunderstore.io/c/lethal-company/p/Clarity/BoomBoxOverhaul/
-
-## Old V1 Source Code
-- https://github.com/Henreh1/BoomBoxOverhaulV1-OLD
-
-# Please do not copy and paste this code and claim it as your own, that is why no License is attached.
+There may be issues because I am still trying to figure out YTDL and it has been a while since I created modifications for this game. If there are any ping me in the Lethal company modding discord (@henreh.) or use the github issues page :D
