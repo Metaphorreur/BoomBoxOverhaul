@@ -11,7 +11,7 @@ namespace BoomBoxOverhaul
     {
         public const string ModGuid = "henreh.boomboxoverhaul";
         public const string ModName = "BoomBoxOverhaulV2";
-        public const string ModVersion = "2.0.1";
+        public const string ModVersion = "2.0.2";
 
         internal static Plugin Instance;
         internal static Harmony Harmony;
@@ -29,11 +29,15 @@ namespace BoomBoxOverhaul
         internal static ConfigEntry<bool> ShufflePlaylist;
         internal static ConfigEntry<int> MaxTrackSeconds;
         internal static ConfigEntry<bool> DeleteCacheOnBoot;
+        internal static ConfigEntry<bool> LocalVolumeOnly;
 
         internal static ConfigEntry<bool> AutoDownloadYtDlp;
         internal static ConfigEntry<bool> AutoDownloadFfmpeg;
         internal static ConfigEntry<string> FfmpegZipUrl;
         internal static ConfigEntry<bool> SearchPathForTools;
+
+        internal static bool SyncedLocalVolumeOnly = true;
+        internal static bool HasSyncedVolumeMode = false;
 
         internal static string PluginFolder = "";
         internal static string CacheFolder = "";
@@ -56,6 +60,7 @@ namespace BoomBoxOverhaul
             ShufflePlaylist = Config.Bind("Playlist", "ShufflePlaylist", false, "Shuffle playlist order after resolving entries.");
             MaxTrackSeconds = Config.Bind("Downloads", "MaxTrackSeconds", 1800, "Maximum allowed track duration in seconds.");
             DeleteCacheOnBoot = Config.Bind("Cache", "DeleteCacheOnBoot", true, "Clear cache when the plugin loads.");
+            LocalVolumeOnly = Config.Bind("Audio", "LocalVolumeOnly", false, "If true, volume changes are local only. If false, boombox volume is shared server-wide.");
 
             AutoDownloadYtDlp = Config.Bind("Dependencies", "AutoDownloadYtDlp", true, "Automatically download yt-dlp if it is missing.");
             AutoDownloadFfmpeg = Config.Bind("Dependencies", "AutoDownloadFfmpeg", true, "Automatically download ffmpeg if it is missing.");
@@ -88,6 +93,18 @@ namespace BoomBoxOverhaul
             DontDestroyOnLoad(netBoot);
 
             Logger.LogInfo("BoomBoxOverhaul network boot started.");
+        }
+
+        internal static bool UseLocalVolumeOnly()
+        {
+            if (Unity.Netcode.NetworkManager.Singleton != null
+                && Unity.Netcode.NetworkManager.Singleton.IsClient
+                && HasSyncedVolumeMode)
+            {
+                return SyncedLocalVolumeOnly;
+            }
+
+            return LocalVolumeOnly.Value;
         }
 
         internal static void Log(string msg)
