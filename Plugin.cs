@@ -55,7 +55,7 @@ namespace BoomBoxOverhaul
             AutoplayPlaylist = Config.Bind("Playlist", "AutoplayPlaylist", true, "Automatically continue to next playlist track.");
             ShufflePlaylist = Config.Bind("Playlist", "ShufflePlaylist", false, "Shuffle playlist order after resolving entries.");
             MaxTrackSeconds = Config.Bind("Downloads", "MaxTrackSeconds", 1800, "Maximum allowed track duration in seconds.");
-            DeleteCacheOnBoot = Config.Bind("Cache", "DeleteCacheOnBoot", false, "Clear cache when the plugin loads.");
+            DeleteCacheOnBoot = Config.Bind("Cache", "DeleteCacheOnBoot", true, "Clear cache when the plugin loads.");
 
             AutoDownloadYtDlp = Config.Bind("Dependencies", "AutoDownloadYtDlp", true, "Automatically download yt-dlp if it is missing.");
             AutoDownloadFfmpeg = Config.Bind("Dependencies", "AutoDownloadFfmpeg", true, "Automatically download ffmpeg if it is missing.");
