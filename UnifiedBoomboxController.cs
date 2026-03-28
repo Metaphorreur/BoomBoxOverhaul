@@ -118,6 +118,14 @@ namespace BoomBoxOverhaul
 
         private void HandleInput()
         {
+        if (IsConfiguredKeyPressed(Plugin.OpenUiKey.Value) && IsHeldByLocalPlayer())
+{
+    uiOpen = !uiOpen;
+    if (!uiOpen)
+    {
+        StopAllBoomboxAudioForUi();
+    }
+}
             if (IsConfiguredKeyPressed(Plugin.VolumeUpKey.Value) && IsRelevantToLocalPlayer())
             {
                 float nextVolume = Mathf.Clamp(localVolume + Plugin.VolumeStep.Value, 0f, 2f);
