@@ -18,6 +18,7 @@ namespace BoomBoxOverhaul
         private const string MsgRejectPlay = "BoomBoxOverhaul_RejectPlay";
         private const string MsgSetVolume = "BoomBoxOverhaul_SetVolume";
         private const string MsgApplyVolume = "BoomBoxOverhaul_ApplyVolume";
+        private const string MsgSyncSettings = "BoomBoxOverhaul_SyncSettings";
 
         private static MonoBehaviour host;
         private static bool initialized;
@@ -41,6 +42,12 @@ namespace BoomBoxOverhaul
             while (true)
             {
                 TryBindToNetworkManager();
+
+                if (boundManager != null && handlersRegistered && boundManager.IsServer)
+                {
+                    BroadcastSyncSettings(Plugin.LocalVolumeOnly.Value);
+                }
+
                 yield return new WaitForSeconds(1f);
             }
         }
@@ -85,6 +92,7 @@ namespace BoomBoxOverhaul
             mm.RegisterNamedMessageHandler(MsgRejectPlay, OnRejectPlay);
             mm.RegisterNamedMessageHandler(MsgSetVolume, OnSetVolume);
             mm.RegisterNamedMessageHandler(MsgApplyVolume, OnApplyVolume);
+            mm.RegisterNamedMessageHandler(MsgSyncSettings, OnSyncSettings);
 
             handlersRegistered = true;
             Plugin.Log("BoomBoxOverhaul network handlers registered.");
@@ -108,6 +116,7 @@ namespace BoomBoxOverhaul
             mm.UnregisterNamedMessageHandler(MsgRejectPlay);
             mm.UnregisterNamedMessageHandler(MsgSetVolume);
             mm.UnregisterNamedMessageHandler(MsgApplyVolume);
+            mm.UnregisterNamedMessageHandler(MsgSyncSettings);
 
             handlersRegistered = false;
             Plugin.Log("BoomBoxOverhaul network handlers unregistered.");
@@ -310,8 +319,31 @@ namespace BoomBoxOverhaul
             }
         }
 
+        public static void BroadcastSyncSettings(bool localVolumeOnly)
+        {
+            if (boundManager == null || !handlersRegistered || !boundManager.IsServer)
+            {
+                return;
+            }
+
+            ulong[] clientIds = GetConnectedClientIds();
+            int i;
+            for (i = 0; i < clientIds.Length; i++)
+            {
+                using (FastBufferWriter writer = new FastBufferWriter(64, Allocator.Temp))
+                {
+                    writer.WriteValueSafe(localVolumeOnly);
+                    boundManager.CustomMessagingManager.SendNamedMessage(MsgSyncSettings, clientIds[i], writer);
+                }
+            }
+
+            Plugin.Log("Broadcast synced settings. LocalVolumeOnly = " + localVolumeOnly);
+        }
+
         private static void OnRequestPlay(ulong senderClientId, FastBufferReader reader)
         {
+            Plugin.Log("OnRequestPlay received from client " + senderClientId);
+
             ulong networkObjectId;
             string url;
 
@@ -331,6 +363,8 @@ namespace BoomBoxOverhaul
 
         private static void OnPrepareTrack(ulong senderClientId, FastBufferReader reader)
         {
+            Plugin.Log("OnPrepareTrack received");
+
             ulong networkObjectId;
             string canonicalUrl;
             string videoId;
@@ -369,6 +403,8 @@ namespace BoomBoxOverhaul
             reader.ReadValueSafe(out networkObjectId);
             reader.ReadValueSafe(out success);
 
+            Plugin.Log("OnNotifyReady received from " + senderClientId + " success=" + success);
+
             UnifiedBoomboxController controller = GetController(networkObjectId);
             if (controller != null)
             {
@@ -382,6 +418,8 @@ namespace BoomBoxOverhaul
 
         private static void OnBeginPlayback(ulong senderClientId, FastBufferReader reader)
         {
+            Plugin.Log("OnBeginPlayback received");
+
             ulong networkObjectId;
             string videoId;
 
@@ -454,6 +492,8 @@ namespace BoomBoxOverhaul
             reader.ReadValueSafe(out networkObjectId);
             reader.ReadValueSafe(out volume);
 
+            Plugin.Log("OnSetVolume received from " + senderClientId + " volume=" + volume);
+
             UnifiedBoomboxController controller = GetController(networkObjectId);
             if (controller != null)
             {
@@ -473,6 +513,8 @@ namespace BoomBoxOverhaul
             reader.ReadValueSafe(out networkObjectId);
             reader.ReadValueSafe(out volume);
 
+            Plugin.Log("OnApplyVolume received volume=" + volume);
+
             UnifiedBoomboxController controller = GetController(networkObjectId);
             if (controller != null)
             {
@@ -482,6 +524,17 @@ namespace BoomBoxOverhaul
             {
                 Plugin.Warn("OnApplyVolume could not find controller for object " + networkObjectId);
             }
+        }
+
+        private static void OnSyncSettings(ulong senderClientId, FastBufferReader reader)
+        {
+            bool localVolumeOnly;
+            reader.ReadValueSafe(out localVolumeOnly);
+
+            Plugin.SyncedLocalVolumeOnly = localVolumeOnly;
+            Plugin.HasSyncedVolumeMode = true;
+
+            Plugin.Log("Received synced settings. LocalVolumeOnly = " + localVolumeOnly);
         }
 
         private static ulong[] GetConnectedClientIds()
