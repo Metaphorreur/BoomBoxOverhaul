@@ -30,7 +30,12 @@
 
 ## Server-wide Volume - 2.0.2
 
-* Fixed volume only being client side 
-* Changed cache clear on boot default to true, delete your config or manually edit it yourself
+* Added Server wide volume changes!
+* Changed cache clear on boot default to true, delete your config or manually edit it yourself (This just deletes the downloaded mp3s on boot!)
+* Add Config options for local or serverwide audio and checks so that host decision is final
 * Added extra credits for Helpers and testers in README
+* Added Known Incompatibilities section in README (Will update this when new data is found!)
+* Added planned features in README
+* Added playback run logs for my own sanity to hunt issues (When it is stable I will create a config option to disable these :D)
+
 
