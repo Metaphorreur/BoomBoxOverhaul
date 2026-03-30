@@ -21,6 +21,7 @@ namespace BoomBoxOverhaul
         internal static ConfigEntry<bool> KeepPlayingPocketed;
         internal static ConfigEntry<float> VolumeStep;
         internal static ConfigEntry<float> DefaultVolume;
+        internal static ConfigEntry<string> AudioModer;
         internal static ConfigEntry<KeyCode> OpenUiKey;
         internal static ConfigEntry<KeyCode> VolumeUpKey;
         internal static ConfigEntry<KeyCode> VolumeDownKey;
@@ -58,6 +59,7 @@ namespace BoomBoxOverhaul
             OpenUiKey = Config.Bind("Input", "OpenUiKey", KeyCode.B, "Open URL input UI.");
             VolumeUpKey = Config.Bind("Input", "VolumeUpKey", KeyCode.Equals, "Increase boombox volume.");
             VolumeDownKey = Config.Bind("Input", "VolumeDownKey", KeyCode.Minus, "Decrease boombox volume.");
+            AudioMode = Config.Bind("Audio", "AudioMode", "Balanced", "Boombox audio preset: Realistic, balanced, or Pure music!")
             MaxCacheFiles = Config.Bind("Cache", "MaxCacheFiles", 15, "Maximum amount of downloaded tracks to keep.");
             ReadyTimeoutSeconds = Config.Bind("Networking", "ReadyTimeoutSeconds", 20f, "How long the server waits for clients to prepare before starting anyway.");
             AutoplayPlaylist = Config.Bind("Playlist", "AutoplayPlaylist", true, "Automatically continue to next playlist track.");
@@ -119,6 +121,10 @@ namespace BoomBoxOverhaul
                 return SyncedWeightlessBoombox;
             }
             return WeightlessBoombox.Value;
+        }
+        internal static string UseAudioMode()
+        {
+            return AudioMode.Value;
         }
 
         internal static void Log(string msg)
