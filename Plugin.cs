@@ -18,7 +18,7 @@ namespace BoomBoxOverhaul
     {
         public const string ModGuid = "henreh.boomboxoverhaul";
         public const string ModName = "BoomBoxOverhaulV2";
-        public const string ModVersion = "2.0.2";
+        public const string ModVersion = "2.1.0";
 
         internal static Plugin Instance;
         internal static Harmony Harmony;
