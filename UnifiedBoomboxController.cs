@@ -78,6 +78,7 @@ namespace BoomBoxOverhaul
             ApplyLocalVolume();
             UpdateTooltip();
             SetupAudioMixer();
+            ApplyAudioModeSettings();
         }
 
         private void Update()
@@ -351,7 +352,46 @@ namespace BoomBoxOverhaul
         UpdateTooltip();
         RefreshHeldItemTooltip();
        }
+       ///////////////////////////
+       //Audio mode (experiment)//
+       ///////////////////////////
+      private void ApplyAudioModeSettings()
+      {
+        try
+        {
+            return;
+        }
 
+        switch (Plugin.UseAudioMode())
+        {
+            case AudioModeType.Realistic:
+            Audio.spatialBlend = 1f;
+            Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+            Audio.minDistance = 1.5f;
+            Audio.maxDistance = 35f;
+            break;
+
+            case AudioModeType.Music:
+            Audio.spatialBlend = 0.2f;
+            Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+            Audio.minDistance = 3f;
+            Audio.maxDistance = 60f;
+            break;
+
+            default:  //Default is balanced "Because it just works" - Todd howard
+                Audio.spatialBlend = 0.6f;
+                Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+                Audio.minDistance = 2f;
+                Audio.maxDistance = 50f;
+                break;
+        }
+        
+        Plugin.Log("Applied Audio Preset: " + Plugin.UseAudioMode());
+      }
+      catch (Exception ex)
+      {
+        Plugin.Warn("Failed to apply Audio Preset: " + ex);
+      }
         private void RefreshHeldItemTooltip()
         {
             try
@@ -573,7 +613,7 @@ namespace BoomBoxOverhaul
                 "[" + Plugin.VolumeDownKey.Value + "/" + Plugin.VolumeUpKey.Value + "] Volume: " + Mathf.RoundToInt(localVolume * 100f) + "%",
                 "Track: " + scrollingTitle,
                 "State: " + statusText,
-                "Deps: " + DependencyBootstrapper.GetStatus()
+                "Audio: " + Plugin.UseAudioMode
             };
         }
 
