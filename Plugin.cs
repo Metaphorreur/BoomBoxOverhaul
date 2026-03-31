@@ -10,7 +10,7 @@ namespace BoomBoxOverhaul
     {
         Realistic,
         Balanced,
-        Pure Music!
+        PureMusic
     }
 
     [BepInPlugin(ModGuid, ModName, ModVersion)]
