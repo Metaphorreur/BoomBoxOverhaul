@@ -40,7 +40,7 @@ namespace BoomBoxOverhaul
         private int tooltipScrollIndex = 0;
 
         private UnityEngine.Audio.AudioMixer mixer;
-        private UnityEnigne.Audio.AudioMixerGroup mixerGroup;
+        private UnityEngine.Audio.AudioMixerGroup mixerGroup;
 
         private void Awake()
         {
@@ -70,15 +70,11 @@ namespace BoomBoxOverhaul
 
             Audio.playOnAwake = false;
             Audio.loop = false;
-            Audio.spatialBlend = 1f;
-            Audio.rolloffMode = AudioRolloffMode.Linear;
-            Audio.maxDistance = 30f;
+            ApplyAudioModeSettings();
 
             localVolume = Mathf.Clamp(Plugin.DefaultVolume.Value, 0f, 2f);
             ApplyLocalVolume();
-            UpdateTooltip();
-            SetupAudioMixer();
-            ApplyAudioModeSettings();
+            RefreshHeldItemTooltip();
         }
 
         private void Update()
@@ -140,10 +136,10 @@ namespace BoomBoxOverhaul
             if (IsConfiguredKeyPressed(Plugin.VolumeUpKey.Value) && IsRelevantToLocalPlayer())
             {
                 float nextVolume = Mathf.Clamp(localVolume + Plugin.VolumeStep.Value, 0f, 2f);
+                localVolume = nextVolume;
 
                 if (Plugin.UseLocalVolumeOnly())
                 {
-                    localVolume = nextVolume;
                     ApplyLocalVolume();
                     Plugin.Log("Applied local-only volume up: " + localVolume);
                 }
@@ -151,14 +147,13 @@ namespace BoomBoxOverhaul
                 {
                     if (Boombox != null && Boombox.NetworkObject != null)
                     {
-                        Plugin.Log("Sending shared volume up request: " + nextVolume);
-                        BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, nextVolume);
+                        Plugin.Log("Sending server volume: " + localVolume);
+                        BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, localVolume);
                     }
                     else
                     {
-                        localVolume = nextVolume;
                         ApplyLocalVolume();
-                        Plugin.Warn("NetworkObject missing, fell back to local volume up.");
+                        Plugin.Warn("Object missing, fell back to local volume, sorry!");
                     }
                 }
             }
@@ -166,10 +161,10 @@ namespace BoomBoxOverhaul
             if (IsConfiguredKeyPressed(Plugin.VolumeDownKey.Value) && IsRelevantToLocalPlayer())
             {
                 float nextVolume = Mathf.Clamp(localVolume - Plugin.VolumeStep.Value, 0f, 2f);
+                localVolume = nextVolume;
 
                 if (Plugin.UseLocalVolumeOnly())
                 {
-                    localVolume = nextVolume;
                     ApplyLocalVolume();
                     Plugin.Log("Applied local-only volume down: " + localVolume);
                 }
@@ -177,14 +172,13 @@ namespace BoomBoxOverhaul
                 {
                     if (Boombox != null && Boombox.NetworkObject != null)
                     {
-                        Plugin.Log("Sending shared volume down request: " + nextVolume);
-                        BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, nextVolume);
+                        Plugin.Log("Sending server volume: " + localVolume);
+                        BoomBoxOverhaulNet.SendSetVolume(Boombox.NetworkObject.NetworkObjectId, localVolume);
                     }
                     else
                     {
-                        localVolume = nextVolume;
                         ApplyLocalVolume();
-                        Plugin.Warn("NetworkObject missing, fell back to local volume down.");
+                        Plugin.Warn("Object missing, fell back to local volume, sorry!");
                     }
                 }
             }
@@ -322,76 +316,103 @@ namespace BoomBoxOverhaul
             }
         }
 
-       private void ApplyLocalVolume()
-       {
-        if (Audio == null)
+        private void ApplyLocalVolume()
         {
-            return;
-        }
-
-        float volume = Mathf.Clamp(localVolume, 0.0001f, 1.8f); // 1.8 instead of 2 to avoid ear destruction kind of lol
-
-        //Decible conversion (I hope)
-        float dB = Mathf.Log10(volume) * 20f;
-
-        try
-        {
-            if (mixer !- null)
+            if (Audio == null)
             {
-                mixer.SetFloat("Volume", dB);
+                return;
+            }
+
+            float clamped = Mathf.Clamp(localVolume, 0f, 2f);
+            float appliedVolume;
+
+            if (clamped <= 1f)
+            {
+                appliedVolume = clamped;
             }
             else
             {
-                Audio.volume = Mathf.Clamp01(volume);
+                //Something like that I think :/
+                appliedVolume = 1f + ((clamped - 1f) * 1.2f);
+            }
+
+            Audio.volume = appliedVolume;
+
+            UpdateTooltip();
+            RefreshHeldItemTooltip();
+        }
+
+        public void ServerHandleSetVolume( float volume)
+        {
+            if (Plugin.LocalVolumeOnly.Value)
+            {
+                Plugin.Log("Server rejected server volume change, the host has it set to Local changes only!");
+                return;
+            }
+
+            float clamped = Mathf.Clamp(volume, 0f, 2f);
+
+            if (Boombox != null && Boombox.NetworkObject != null)
+            {
+                Plugin.Log("Sending shared volume: " + clamped);
             }
         }
-        catch (Exception ex)
+
+        public void ClientApplyNetworkVolume(float volume)
         {
-            Plugin.Warn("Volume application failed (damn): " + ex);
-        }
-        UpdateTooltip();
-        RefreshHeldItemTooltip();
-       }
-       ///////////////////////////
-       //Audio mode (experiment)//
-       ///////////////////////////
-      private void ApplyAudioModeSettings()
-      {
-        try
-        {
-            return;
+            Plugin.Log("ClientApplyNetworkVolume > " + volume);
+            localVolume = Mathf.Clamp(volume, 0f, 2f);
+            ApplyLocalVolume();
         }
 
-        switch (Plugin.UseAudioMode())
+        ///////////////////////////
+        //Audio mode (experiment)//
+        ///////////////////////////
+        private void ApplyAudioModeSettings()
         {
-            case AudioModeType.Realistic:
-            Audio.spatialBlend = 1f;
-            Audio.rolloffMode = AudioRolloffMode.Logarithmic;
-            Audio.minDistance = 1.5f;
-            Audio.maxDistance = 35f;
-            break;
+            try
+            {
+                if (Audio == null)
+                {
+                    return;
+                }
 
-            case AudioModeType.Music:
-            Audio.spatialBlend = 0.2f;
-            Audio.rolloffMode = AudioRolloffMode.Logarithmic;
-            Audio.minDistance = 3f;
-            Audio.maxDistance = 60f;
-            break;
 
-            default:  //Default is balanced "Because it just works" - Todd howard
-                Audio.spatialBlend = 0.6f;
-                Audio.rolloffMode = AudioRolloffMode.Logarithmic;
-                Audio.minDistance = 2f;
-                Audio.maxDistance = 50f;
-                break;
+
+
+                switch (Plugin.UseAudioMode())
+                {
+                    case AudioModeType.Realistic:
+                        Audio.spatialBlend = 1f;
+                        Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+                        Audio.minDistance = 1.5f;
+                        Audio.maxDistance = 35f;
+                        break;
+
+                    case AudioModeType.PureMusic:
+                        Audio.spatialBlend = 0.2f;
+                        Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+                        Audio.minDistance = 3f;
+                        Audio.maxDistance = 60f;
+                        break;
+
+                    default:  //Default is balanced "Because it just works" - Todd howard
+                        Audio.spatialBlend = 0.6f;
+                        Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+                        Audio.minDistance = 2f;
+                        Audio.maxDistance = 50f;
+                        break;
+                }
+
+                Plugin.Log("Applied Audio Preset: " + Plugin.UseAudioMode());
+                UpdateTooltip();
+                RefreshHeldItemTooltip();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Warn("Failed to apply Audio Preset: " + ex);
+            }
         }
-        
-        Plugin.Log("Applied Audio Preset: " + Plugin.UseAudioMode());
-      }
-      catch (Exception ex)
-      {
-        Plugin.Warn("Failed to apply Audio Preset: " + ex);
-      }
         private void RefreshHeldItemTooltip()
         {
             try
@@ -444,34 +465,6 @@ namespace BoomBoxOverhaul
                 Audio.Stop();
             }
         }
-        // Aduio mixer for different presets of audio style (experimental)
-        private void SetupAudioMixer()
-        {
-            try
-            {
-                mixer = new UnityEngine.Audio.AudioMixer();
-
-                UnityEngine.Audio.AudioMixerGroup[] groups = mixer.FindMatchingGroups("Master");
-
-                if (groups !=null && groups.lengths > 0)
-                {
-                    mixerGroup = groups[0];
-                }
-
-                if (mixerGroup != null && Audio != null)
-                {
-                    Audio.outputAudioMixerGroup = mixerGroup;
-                }
-
-                mixer.SetFloat("Volume", 0f);
-            }
-            catch (Exception ex)
-            {
-                Plugin.Warn("Failed to start Audio Mixer: " + ex);
-             
-            }
-        }
-
         private void SetCameraLocked(bool locked)
         {
             cameraLocked = locked;
@@ -541,26 +534,26 @@ namespace BoomBoxOverhaul
             {
                 if (Boombox == null || Boombox.itemProperties == null)
                 {
-                return;
-            }
+                    return;
+                }
 
-            if (Plugin.WeightlessBoombox.Value)
-            {
-                Boombox.itemProperties.weight = 1f;
-                Plugin.Log("The boombox is as light as a feather!");
+                if (Plugin.WeightlessBoombox.Value)
+                {
+                    Boombox.itemProperties.weight = 1f;
+                    Plugin.Log("The boombox is as light as a feather!");
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Plugin.Warn("Unfortunately the boombox is made of tungsten: " + ex);
-        }
+            catch (Exception ex)
+            {
+                Plugin.Warn("Unfortunately the boombox is made of tungsten: " + ex);
+            }
         }
         public void RefreshWeightSettingsFromSync()
-            {
+        {
             ApplyWeightSettings();
         }
-        
-    
+
+
 
         private string GetScrollingTrackText()
         {
@@ -613,7 +606,7 @@ namespace BoomBoxOverhaul
                 "[" + Plugin.VolumeDownKey.Value + "/" + Plugin.VolumeUpKey.Value + "] Volume: " + Mathf.RoundToInt(localVolume * 100f) + "%",
                 "Track: " + scrollingTitle,
                 "State: " + statusText,
-                "Audio: " + Plugin.UseAudioMode
+                "Audio: " + Plugin.UseAudioMode()
             };
         }
 
@@ -940,6 +933,7 @@ namespace BoomBoxOverhaul
         {
             Plugin.Log("ClientBeginPlayback → " + videoId);
 
+            ApplyAudioModeSettings();
             currentVideoId = videoId;
             isPreparing = false;
             isPlayingCustom = true;
@@ -1092,30 +1086,6 @@ namespace BoomBoxOverhaul
             }
 
             return isPlayingCustom;
-        }
-
-        public void ServerHandleSetVolume(float volume)
-        {
-            if (Plugin.LocalVolumeOnly.Value)
-            {
-                Plugin.Log("Server rejected shared volume change because LocalVolumeOnly is enabled on host.");
-                return;
-            }
-
-            float clamped = Mathf.Clamp(volume, 0f, 2f);
-
-            if (Boombox != null && Boombox.NetworkObject != null)
-            {
-                Plugin.Log("Broadcasting shared volume: " + clamped);
-                BoomBoxOverhaulNet.BroadcastApplyVolume(Boombox.NetworkObject.NetworkObjectId, clamped);
-            }
-        }
-
-        public void ClientApplyNetworkVolume(float volume)
-        {
-            Plugin.Log("ClientApplyNetworkVolume → " + volume);
-            localVolume = Mathf.Clamp(volume, 0f, 2f);
-            ApplyLocalVolume();
         }
     }
 }
